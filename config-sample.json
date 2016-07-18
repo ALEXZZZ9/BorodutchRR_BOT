@@ -1,0 +1,14 @@
+{
+    "debug": false,
+    "TELEGRAM_BOT_TOKEN" : "123456789:qqqqqqwwwwwweeeeeerrrrrrttttttyyyyyy",
+    "BorodutchAPIURL" : "http://123.herokuapp.com",
+    "BorodutchAPIKey" : "123456qwerty",
+    "TransferBotName" : "BorodutchRR_BOT",
+    "admins" : [
+        "123456789"
+    ],
+    "mongoose" : {
+        "uri" : "mongodb://localhost:27017/BorodutchRR_BOT",
+        "port" : "27017"
+    }
+}

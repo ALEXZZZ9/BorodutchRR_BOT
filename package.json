@@ -1,0 +1,14 @@
+{
+  "name": "BorodutchRR_BOT",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node BorodutchRR_BOT.js"
+  },
+  "dependencies": {
+    "mongoose": "~4.5.3",
+    "node-telegram-bot-api": "~0.23.3",
+    "winston": "~2.2.0",
+    "request": "~2.72.0"
+  }
+}
