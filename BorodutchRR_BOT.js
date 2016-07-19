@@ -56,12 +56,21 @@ var mainMenuKeyboard = {
 var gameKeyboard = {
     reply_markup: JSON.stringify({
         keyboard: [
-            ['Играть', 'Назад'],
+            ['Играть', 'Смотреть', 'Назад'],
             ['\u{1F4B0} Баланс \u{1F4B0}', '\u{1F4B8} Donation \u{1F4B8}'],
             ['/subscribe \u{1F509}', '/unsubscribe \u{1F507}']
         ],
         resize_keyboard: true,
         one_time_keyboard: false
+    })
+};
+var watchKeyboard = {
+    reply_markup: JSON.stringify({
+        keyboard: [
+            ['Перестать смотреть']
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true
     })
 };
 var donateKeyboard = {
@@ -142,11 +151,11 @@ bot.onText(/Играть (.+)/, (msg, match) => {
         return;
     } else if (msg.chat.type === 'group') {
         return;
-    } else if (isPlaying) {
-        SendMessage(chatId, 'Игра уже идёт!');
-        return;
     } else if (playingUsers.indexOf(userInfo.fromId) !== -1) {
         SendMessage(chatId, 'Вы уже участвуете!\nКак только игра начнётся, вы получите оповещение!', hideKeyboard);
+        return;
+    } else if (isPlaying) {
+        SendMessage(chatId, 'Игра уже идёт!', watchKeyboard);
         return;
     } else if (isPrePlaying) {
         SendMessage(chatId, `Игра на ${currentGamePrice} гелиончиков скоро начнётся, хочешь присоединиться? Жми "Играть"!`, gameKeyboard);
@@ -188,15 +197,19 @@ bot.onText(/Играть$/, msg => {
         return;
     } else if (msg.chat.type === 'group') {
         return;
-    } else if (isPlaying) {
-        SendMessage(chatId, 'Игра уже идёт!');
+    } else if (playingUsers.indexOf(userInfo.fromId) !== -1) {
+        SendMessage(chatId, 'Вы уже участвуете!\nКак только игра начнётся, вы получите оповещение!');
+        return;
+    }else if (isPlaying) {
+        SendMessage(chatId, 'Игра уже идёт!', watchKeyboard);
         return;
     } else if (!isPrePlaying) {
         SendMessage(chatId, 'Чтобы начать игру нажмите "Играть 50/100" или напишите боту "Играть {сумма на которую вы хотите играть}"', mainMenuKeyboard);
         return;
-    } else if (playingUsers.indexOf(userInfo.fromId) !== -1) {
-        SendMessage(chatId, 'Вы уже участвуете!\nКак только игра начнётся, вы получите оповещение!');
-        return;
+    }
+
+    if (watchingUsers.indexOf(userInfo.fromId) !== -1) {
+        watchingUsers.splice(watchingUsers.indexOf(userInfo.fromId), 1);
     }
 
     if (playingUsers.length) {
@@ -211,6 +224,55 @@ bot.onText(/Играть$/, msg => {
             }
         });
     }
+});
+
+bot.onText(/Смотреть/, msg => {
+    var chatId = msg.chat.id;
+    var userInfo = GetUserInfo(msg);
+
+    if (!isStarted){
+        return;
+    } else  if (!isEnabled){
+        SendMessage(chatId, 'Бот на техобслуживании!');
+        return;
+    } else if (msg.chat.type === 'group') {
+        return;
+    } else if (!isPlaying && !isPrePlaying) {
+        SendMessage(chatId, 'Тут не на что смотреть!', mainMenuKeyboard);
+        return;
+    } else if (watchingUsers.indexOf(userInfo.fromId) !== -1) {
+        SendMessage(chatId, 'Вы уже смотрите эту игру!\nКак только что-то произойдёт, вы получите оповещение!');
+        return;
+    } else if (playingUsers.indexOf(userInfo.fromId) !== -1 || ripUsers.indexOf(userInfo.fromId) !== -1) {
+        SendMessage(chatId, 'Вы участник этой игры, поэтому вам не доступна эта функция!');
+        return;
+    }
+
+    SendMessage(chatId, 'Теперь вы смотрите за этой игрой!', watchKeyboard);
+    watchingUsers.push(userInfo.fromId);
+});
+
+bot.onText(/Перестать смотреть/, msg => {
+    var chatId = msg.chat.id;
+    var userInfo = GetUserInfo(msg);
+
+    if (!isStarted){
+        return;
+    } else  if (!isEnabled){
+        SendMessage(chatId, 'Бот на техобслуживании!');
+        return;
+    } else if (msg.chat.type === 'group') {
+        return;
+    } else if (watchingUsers.indexOf(userInfo.fromId) === -1) {
+        SendMessage(chatId, 'Вы и не смотрите за игрой!');
+        return;
+    } else if (playingUsers.indexOf(userInfo.fromId) !== -1 || ripUsers.indexOf(userInfo.fromId) !== -1) {
+        SendMessage(chatId, 'Вы участник этой игры, поэтому вам не доступна эта функция!');
+        return;
+    }
+
+    SendMessage(chatId, 'Вы больше не смотрите эту игрой!', gameKeyboard);
+    watchingUsers.splice(watchingUsers.indexOf(userInfo.fromId), 1);
 });
 
 bot.onText(/\/start/, msg => {
@@ -524,7 +586,7 @@ bot.on('callback_query', msg => {
  */
 function SendMessage(chatId, text, keyboard = {}) {
     if (!chatId || !text) {
-        log.error('SendMessage error: chatId or text is null');
+        log.error(`SendMessage error: chatId or text is null (chatId:${chatId}; text:${text})`);
         return;
     }
 
@@ -598,6 +660,7 @@ function StartGame(money) {
             });
 
             SendMessage(playingUsers[0], 'К сожалению вас никто не поддержал =(', mainMenuKeyboard);
+            SendMessageToAll('Игра так и не началась, поэтому вы больше не смотрите за ней!', playingUsers[0], mainMenuKeyboard);
             ResetGame();
         }
     }, (!config.debug) ? 60000 : 6000);
