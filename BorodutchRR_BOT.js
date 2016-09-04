@@ -48,7 +48,7 @@ let bank = 0;
 
 
 let mainMenuKeyboard = function(chatId, status){
-    console.log( chatId, status, ( status ? StringsFile.unsubscribeStr : StringsFile.subscribeStr) );
+  
     let rowKey = [ ( status ? StringsFile.unsubscribeStr : StringsFile.subscribeStr), StringsFile.helpStr];
 
 
@@ -62,18 +62,15 @@ let mainMenuKeyboard = function(chatId, status){
         one_time_keyboard: false
     }
 
-    let mainMenuKeyboardObj = { 
+    return { 
         reply_markup: JSON.stringify(data)
-    }
-
-    return mainMenuKeyboardObj;
+    };
 };
 
 
 let gameKeyboard = function(chatId, status){
-    console.log( chatId, status, ( status ? StringsFile.unsubscribeStr : StringsFile.subscribeStr) );
-    let rowKey = [ (  status ? StringsFile.unsubscribeStr : StringsFile.subscribeStr), StringsFile.helpStr];
-
+   
+    let rowKey = [ ( status ? StringsFile.unsubscribeStr : StringsFile.subscribeStr), StringsFile.helpStr];
 
     let data = {
             keyboard: [
@@ -85,11 +82,9 @@ let gameKeyboard = function(chatId, status){
             one_time_keyboard: false
     }
 
-    let gemeKeyboardObj = { 
+    return { 
         reply_markup: JSON.stringify(data)
     }
-
-    return gemeKeyboardObj;
 };
 let watchKeyboard = {
     reply_markup: JSON.stringify({
