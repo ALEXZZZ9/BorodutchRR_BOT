@@ -3,8 +3,6 @@
 /*
 start - About
 help - Help
-subscribe - Subscribe
-unsubscribe - Unsubscribe
 */
 
 const mongoose = require('mongoose');
@@ -14,66 +12,74 @@ const request = require('request');
 const log = require('./libs/log')(module);
 const config = require('./config.json');
 const SubscribersModel = require('./models/subscribers').SubscribersModel;
+const strings = require('./strings');
+
+const needMinCountHel = 500;
+const maxCountHel = 100000;
 
 const options = {
     polling: {timeout: 10, interval: 1000}
 };
 
-var isEnabled = true;
-var isStarted = false;
+let isEnabled = true;
+let isStarted = false;
 
-var token = /*process.env.TELEGRAM_BOT_TOKEN || */config.TELEGRAM_BOT_TOKEN;
-var botName = '';
+let token = /*process.env.TELEGRAM_BOT_TOKEN || */config.TELEGRAM_BOT_TOKEN;
+let botName = '';
 
-var isPrePlaying = false;
-var isPlaying = false;
-var subscribers = [];
+let isPrePlaying = false;
+let isPlaying = false;
+let subscribers = [];
 
-var playingUsers = [];
-var watchingUsers = [];
-var scrolledUsers = [];
-var ripUsers = [];
-var namesUsersPlaying = [];
+let playingUsers = [];
+let watchingUsers = [];
+let scrolledUsers = [];
+let ripUsers = [];
+let namesUsersPlaying = [];
 
-var currentGamePrice = 0;
-var bulletIn = -1;
-var currentBullet = -1;
-var currentPlayer = -1;
-var gameTimeoutId = -1;
-var bank = 0;
+let currentGamePrice = 0;
+let bulletIn = -1;
+let currentBullet = -1;
+let currentPlayer = -1;
+let gameTimeoutId = -1;
+let bank = 0;
 
-var mainMenuKeyboard = {
-    reply_markup: JSON.stringify({
-        keyboard: [
-            ['Играть 50', 'Играть 100'],
-            ['\u{1F4B0} Баланс \u{1F4B0}', '\u{1F4B8} Donation \u{1F4B8}'],
-            ['/subscribe \u{1F509}', '/unsubscribe \u{1F507}']
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: false
-    })
-};
-var gameKeyboard = {
-    reply_markup: JSON.stringify({
-        keyboard: [
-            ['Играть', 'Смотреть', 'Назад'],
-            ['\u{1F4B0} Баланс \u{1F4B0}', '\u{1F4B8} Donation \u{1F4B8}'],
-            ['/subscribe \u{1F509}', '/unsubscribe \u{1F507}']
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: false
-    })
-};
-var watchKeyboard = {
-    reply_markup: JSON.stringify({
-        keyboard: [
-            ['Перестать смотреть']
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true
-    })
-};
-var donateKeyboard = {
+
+function GetKeyboard(fromId){
+    let keyboardData = [strings.mainMenu.playOne, strings.mainMenu.playTwo];
+    if (isPrePlaying) keyboardData = [strings.mainMenu.play, strings.mainMenu.watch];
+    if (isPlaying) keyboardData = [strings.mainMenu.watch, strings.mainMenu.back];
+
+    let keyboard = {
+        reply_markup: JSON.stringify({
+            keyboard: [
+                (keyboardData),
+                [strings.mainMenu.balance, strings.mainMenu.donation],
+                [( IsSubscriber(fromId) ? strings.mainMenu.unsubscribe : strings.mainMenu.subscribe), strings.mainMenu.help]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        })
+    };
+
+
+    if (isPlaying && watchingUsers.indexOf(fromId) > -1 && playingUsers.indexOf(fromId) === -1 && ripUsers.indexOf(fromId) === -1) {
+        console.log(isPlaying, watchingUsers.indexOf(fromId) > -1, playingUsers.indexOf(fromId) === -1, ripUsers.indexOf(fromId) === -1, isPlaying && watchingUsers.indexOf(fromId) > -1 && playingUsers.indexOf(fromId) === -1 && ripUsers.indexOf(fromId) === -1);
+        keyboard = {
+            reply_markup: JSON.stringify({
+                keyboard: [
+                    ['Перестать смотреть']
+                ],
+                resize_keyboard: true,
+                one_time_keyboard: true
+            })
+        };
+    }
+
+    return  keyboard;
+}
+
+let donateKeyboard = {
     reply_markup: JSON.stringify({
         inline_keyboard: [
             [{text: '10', callback_data: 'D10'}, {text: '50', callback_data: 'D50'}],
@@ -82,7 +88,7 @@ var donateKeyboard = {
         ]
     })
 };
-var hideKeyboard = {
+let hideKeyboard = {
     reply_markup: JSON.stringify({
         keyboard: [],
         hide_keyboard: true
@@ -90,10 +96,10 @@ var hideKeyboard = {
 };
 
 
-var bot = new TelegramBot(token, options);
+let bot = new TelegramBot(token, options);
 
 mongoose.connect(config.mongoose.uri);
-var db = mongoose.connection;
+let db = mongoose.connection;
 
 db.on('error', err => {
     log.error('connection error:', err.message);
@@ -116,8 +122,8 @@ bot.getMe().then(me => {
 });
 
 bot.onText(/\/enable/, msg => {
-    var chatId = msg.chat.id;
-    //var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    //let userInfo = GetUserInfo(msg);
 
     if (!isStarted || chatId !== config.admins[0]){
         return;
@@ -129,8 +135,8 @@ bot.onText(/\/enable/, msg => {
 });
 
 bot.onText(/\/disable/, msg => {
-    var chatId = msg.chat.id;
-    //var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    //let userInfo = GetUserInfo(msg);
 
     if (!isStarted || chatId !== config.admins[0]){
         return;
@@ -141,13 +147,13 @@ bot.onText(/\/disable/, msg => {
 });
 
 bot.onText(/Играть (.+)/, (msg, match) => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
@@ -155,45 +161,45 @@ bot.onText(/Играть (.+)/, (msg, match) => {
         SendMessage(chatId, 'Вы уже участвуете!\nКак только игра начнётся, вы получите оповещение!', hideKeyboard);
         return;
     } else if (isPlaying) {
-        SendMessage(chatId, 'Игра уже идёт!', watchKeyboard);
+        SendMessage(chatId, 'Игра уже идёт!', GetKeyboard(userInfo.fromId));
         return;
     } else if (isPrePlaying) {
-        SendMessage(chatId, `Игра на ${currentGamePrice} гелиончиков скоро начнётся, хочешь присоединиться? Жми "Играть"!`, gameKeyboard);
+        SendMessage(chatId, `Игра на ${currentGamePrice} гелиончиков скоро начнётся, хочешь присоединиться? Жми "Играть"!`, GetKeyboard(userInfo.fromId));
         return;
     }
 
 
     if (!IsNumber(match[1])) {
-        SendMessage(chatId, 'Введите корректную сумму!', mainMenuKeyboard);
+        SendMessage(chatId, 'Введите корректную сумму!', GetKeyboard(userInfo.fromId));
         return;
-    } else if (match[1] < 10) {
-        SendMessage(chatId, 'Нельзя играть меньше чем на 10 гелиончиков!', mainMenuKeyboard);
+    } else if (match[1] < needMinCountHel) {
+        SendMessage(chatId, `Нельзя играть меньше чем на ${needMinCountHel}  гелиончиков!`, GetKeyboard(userInfo.fromId));
         return;
-    } else if (match[1] > 10000) {
-        SendMessage(chatId, 'Нельзя играть больше чем на 10000 гелиончиков!', mainMenuKeyboard);
+    } else if (match[1] > maxCountHel) {
+        SendMessage(chatId, `Нельзя играть больше чем на ${maxCountHel} гелиончиков!`, GetKeyboard(userInfo.fromId));
         return;
     }
 
     Transfer(userInfo.forBUsername, config.TransferBotName, match[1], (err, status) => {
         if (!err) {
-            SendMessage(chatId, 'У других игроков есть 1 минута, чтобы присоединиться к этой игре!\nИгра начнётся через 1 минуту, если к вам присоединится хотя бы 1 человек!', hideKeyboard);
             playingUsers.push(userInfo.fromId);
             namesUsersPlaying.push(userInfo.forBUsername);
             StartGame(match[1]);
+            SendMessage(chatId, 'У других игроков есть 1 минута, чтобы присоединиться к этой игре!\nИгра начнётся через 1 минуту, если к вам присоединится хотя бы 1 человек!', hideKeyboard);
         } else {
-            SendMessage(chatId, 'У вас недостаточно гелиончиков!', mainMenuKeyboard);
+            SendMessage(chatId, 'У вас недостаточно гелиончиков!', GetKeyboard(userInfo.fromId));
         }
     });
 });
 
 bot.onText(/Играть$/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
@@ -201,10 +207,10 @@ bot.onText(/Играть$/, msg => {
         SendMessage(chatId, 'Вы уже участвуете!\nКак только игра начнётся, вы получите оповещение!');
         return;
     }else if (isPlaying) {
-        SendMessage(chatId, 'Игра уже идёт!', watchKeyboard);
+        SendMessage(chatId, 'Игра уже идёт!', GetKeyboard(userInfo.fromId));
         return;
     } else if (!isPrePlaying) {
-        SendMessage(chatId, 'Чтобы начать игру нажмите "Играть 50/100" или напишите боту "Играть {сумма на которую вы хотите играть}"', mainMenuKeyboard);
+        SendMessage(chatId, strings.playText, GetKeyboard(userInfo.fromId));
         return;
     }
 
@@ -215,10 +221,10 @@ bot.onText(/Играть$/, msg => {
     if (playingUsers.length) {
         Transfer(userInfo.forBUsername, config.TransferBotName, currentGamePrice, (err, status) => {
             if (!err) {
-                SendMessage(chatId, 'Вы успешно присоединились к игре.\nКак только игра начнётся, вы получите оповещение!', hideKeyboard);
                 playingUsers.push(userInfo.fromId);
                 namesUsersPlaying.push(userInfo.forBUsername);
                 bank += +currentGamePrice;
+                SendMessage(chatId, 'Вы успешно присоединились к игре.\nКак только игра начнётся, вы получите оповещение!', hideKeyboard);
             } else {
                 SendMessage(chatId, 'У вас недостаточно гелиончиков!');
             }
@@ -227,18 +233,18 @@ bot.onText(/Играть$/, msg => {
 });
 
 bot.onText(/Смотреть/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     } else if (!isPlaying && !isPrePlaying) {
-        SendMessage(chatId, 'Тут не на что смотреть!', mainMenuKeyboard);
+        SendMessage(chatId, 'Тут не на что смотреть!', GetKeyboard(userInfo.fromId));
         return;
     } else if (watchingUsers.indexOf(userInfo.fromId) !== -1) {
         SendMessage(chatId, 'Вы уже смотрите эту игру!\nКак только что-то произойдёт, вы получите оповещение!');
@@ -248,67 +254,67 @@ bot.onText(/Смотреть/, msg => {
         return;
     }
 
-    SendMessage(chatId, 'Теперь вы смотрите за этой игрой!', watchKeyboard);
     watchingUsers.push(userInfo.fromId);
+    SendMessage(chatId, 'Теперь вы смотрите за этой игрой!', GetKeyboard(userInfo.fromId));
 });
 
 bot.onText(/Перестать смотреть/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     } else if (watchingUsers.indexOf(userInfo.fromId) === -1) {
-        SendMessage(chatId, 'Вы и не смотрите за игрой!');
+        SendMessage(chatId, 'Вы и не смотрите за игрой!', GetKeyboard(userInfo.fromId));
         return;
     } else if (playingUsers.indexOf(userInfo.fromId) !== -1 || ripUsers.indexOf(userInfo.fromId) !== -1) {
         SendMessage(chatId, 'Вы участник этой игры, поэтому вам не доступна эта функция!');
         return;
     }
 
-    SendMessage(chatId, 'Вы больше не смотрите эту игрой!', gameKeyboard);
     watchingUsers.splice(watchingUsers.indexOf(userInfo.fromId), 1);
+    SendMessage(chatId, 'Вы больше не смотрите эту игрой!', GetKeyboard(userInfo.fromId));
 });
 
 bot.onText(/\/start/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     }
 
     if (isPrePlaying) {
-        SendMessage(chatId, `Игра на ${currentGamePrice} гелиончиков скоро начнётся, хочешь присоединиться? Жми "Играть"!`, gameKeyboard);
+        SendMessage(chatId, `Игра на ${currentGamePrice} гелиончиков скоро начнётся, хочешь присоединиться? Жми "Играть"!`, GetKeyboard(userInfo.fromId));
     } else {
-        SendMessage(chatId, 'Чтобы начать игру нажмите "Играть 50/100" или напишите боту "Играть {сумма на которую вы хотите играть}\n*С каждого выигрыша 2% комиссия!', mainMenuKeyboard);
+        SendMessage(chatId, strings.playText, GetKeyboard(userInfo.fromId));
     }
     log.info(`${userInfo.username} ${chatId} /start`);
 });
 
 bot.onText(/Спустить курок/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     } else if (!isPlaying) {
-        SendMessage(chatId, 'Игра ещё не идёт!', mainMenuKeyboard);
+        SendMessage(chatId, 'Игра ещё не идёт!', GetKeyboard(userInfo.fromId));
         return;
     } else if (isPrePlaying) {
         SendMessage(chatId, 'Игра ещё не идёт!', hideKeyboard);
@@ -326,6 +332,9 @@ bot.onText(/Спустить курок/, msg => {
             PlayerLosing(2);
         }, 600);
     } else {
+
+        // todo:: Добавить больше событий
+
         SendMessage(playingUsers[currentPlayer], 'Вы цел и невредим!', hideKeyboard);
         SendMessageToAll(`@${namesUsersPlaying[currentPlayer]} смахнул капельки пота со лба!`, playingUsers[currentPlayer]);
 
@@ -334,18 +343,18 @@ bot.onText(/Спустить курок/, msg => {
 });
 
 bot.onText(/Крутануть барабан/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     } else if (!isPlaying) {
-        SendMessage(chatId, 'Игра ещё не идёт!', mainMenuKeyboard);
+        SendMessage(chatId, 'Игра ещё не идёт!', GetKeyboard(userInfo.fromId));
         return;
     } else if (isPrePlaying) {
         SendMessage(chatId, 'Игра ещё не идёт!', hideKeyboard);
@@ -376,13 +385,13 @@ bot.onText(/Крутануть барабан/, msg => {
 });
 
 bot.onText(/Баланс/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
@@ -399,50 +408,45 @@ bot.onText(/Баланс/, msg => {
 });
 
 bot.onText(/Назад/, msg => {
-    var chatId = msg.chat.id;
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     }
 
-    SendMessage(chatId, 'Чтобы начать игру нажмите "Играть 50/100" или напишите боту "Играть {сумма на которую вы хотите играть}"', mainMenuKeyboard);
-});
-
-bot.onText(/\/help/, msg => {
-    var chatId = msg.chat.id;
-
-    if (!isStarted){
-        return;
-    } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
-        return;
-    } else if (msg.chat.type === 'group') {
-        return;
+    if (isPrePlaying) {
+        SendMessage(chatId, `Игра на ${currentGamePrice} гелиончиков скоро начнётся, хочешь присоединиться? Жми "Играть"!`, GetKeyboard(userInfo.fromId));
+    } else {
+        SendMessage(chatId, strings.playText, GetKeyboard(userInfo.fromId));
     }
-
-    SendMessage(chatId, 'Чтобы начать игру нажмите "Играть 50/100" или напишите боту "Играть {сумма на которую вы хотите играть}"\nИспользуется шестизарядный револьвер.\nИгра длится пока не останется 1 выживший!');
 });
 
-bot.onText(/\/subscribe/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+
+
+bot.onText(/\/help/, SendHelp );
+bot.onText(/Как играть?/, SendHelp );
+
+bot.onText(/Оповещать/, msg => {
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     }
 
     if (IsSubscriber(userInfo.fromId)) {
-        SendMessage(chatId, 'Вы уже подписаны на оповещения!');
+        SendMessage(chatId, 'Вы уже подписаны на оповещения!',  GetKeyboard(userInfo.fromId));
         return;
     }
 
@@ -452,7 +456,7 @@ bot.onText(/\/subscribe/, msg => {
             return false;
         }
         if (!ret) {
-            var subscriber = new SubscribersModel({
+            let subscriber = new SubscribersModel({
                 fromId: userInfo.fromId,
                 subscribe: true
             });
@@ -460,8 +464,8 @@ bot.onText(/\/subscribe/, msg => {
             subscriber.save(err => {
                 if (!err) {
                     log.info(`${userInfo.username}(${userInfo.fromId}) subscribe`);
-                    SendMessage(chatId, 'Теперь вы будете получать уведомления, когда кто-то начнёт игру!');
                     subscribers.push(userInfo.fromId);
+                    SendMessage(chatId, 'Теперь вы будете получать уведомления, когда кто-то начнёт игру!', GetKeyboard(userInfo.fromId));
                 } else {
                     log.error('Internal error(%d): %s', res.statusCode, err.message);
                 }
@@ -470,8 +474,8 @@ bot.onText(/\/subscribe/, msg => {
             SubscribersModel.findOneAndUpdate({'fromId': userInfo.fromId}, {'subscribe': true}, {new: false}, (err, ret)  => {
                 if (!err) {
                     log.info(`${userInfo.username}(${userInfo.fromId}) subscribe`);
-                    SendMessage(chatId, 'Теперь вы будете получать уведомления, когда кто-то начнёт игру!');
                     subscribers.push(userInfo.fromId);
+                    SendMessage(chatId, 'Теперь вы будете получать уведомления, когда кто-то начнёт игру!', GetKeyboard(userInfo.fromId));
                 } else {
                     log.error('Internal error(%d): %s', res.statusCode, err.message);
                 }
@@ -480,29 +484,29 @@ bot.onText(/\/subscribe/, msg => {
     });
 });
 
-bot.onText(/\/unsubscribe/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+bot.onText(/Не оповещать/, msg => {
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
     }
 
     if (!IsSubscriber(userInfo.fromId)) {
-        SendMessage(chatId, 'Вы не подписаны на оповещения!');
+        SendMessage(chatId, 'Вы не подписаны на оповещения!',  GetKeyboard(userInfo.fromId));
         return;
     }
 
     SubscribersModel.findOneAndUpdate({'fromId': userInfo.fromId}, {'subscribe': false}, {new: false}, (err, ret) => {
         if (!err) {
             log.info(`${userInfo.username}(${userInfo.fromId}) unsubscribe`);
-            SendMessage(chatId, 'Теперь вы не будете получать уведомления, когда кто-то начнёт игру!');
             subscribers.splice(subscribers.indexOf(userInfo.fromId), 1);
+            SendMessage(chatId, 'Теперь вы не будете получать уведомления, когда кто-то начнёт игру!', GetKeyboard(userInfo.fromId));
         } else {
             log.error('Internal error(%d): %s', res.statusCode, err.message);
         }
@@ -510,13 +514,13 @@ bot.onText(/\/unsubscribe/, msg => {
 });
 
 bot.onText(/Donation/, msg => {
-    var chatId = msg.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted){
         return;
     } else  if (!isEnabled){
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
         return;
     } else if (msg.chat.type === 'group') {
         return;
@@ -527,22 +531,22 @@ bot.onText(/Donation/, msg => {
 
 
 bot.on('text', msg => {
-    var text = msg.text ? msg.text.replace(`@${botName}`, '') : null;
-    var userInfo = GetUserInfo(msg);
+    let text = msg.text ? msg.text.replace(`@${botName}`, '') : null;
+    let userInfo = GetUserInfo(msg);
 
     log.info(`${userInfo.username} say "${text}"`);
 });
 
 bot.on('callback_query', msg => {
-    var chatId = msg.message.chat.id;
-    var userInfo = GetUserInfo(msg);
+    let chatId = msg.message.chat.id;
+    let userInfo = GetUserInfo(msg);
 
     if (!isStarted) {
         return;
     } else  if (!isEnabled) {
-        SendMessage(chatId, 'Бот на техобслуживании!');
+        SendMessage(chatId, strings.maintenance);
     } else {
-        var d = -1;
+        let d = -1;
 
         switch (msg.data) {
             case 'D10':
@@ -614,6 +618,21 @@ function SendMessageToAll(text, excludeId, keyboard = {}) {
     });
 }
 
+function SendHelp(msg) {
+    let chatId = msg.chat.id;
+
+    if (!isStarted){
+        return;
+    } else if (!isEnabled){
+        SendMessage(chatId, strings.maintenance);
+        return;
+    } else if (msg.chat.type === 'group') {
+        return;
+    }
+
+    SendMessage(chatId, strings.helpText);
+}
+
 
 /**
  * Start game
@@ -627,12 +646,14 @@ function StartGame(money) {
     }
     log.info('PrePlaying');
 
+    let zeroUser = playingUsers[0];
+
     isPrePlaying = true;
     currentGamePrice = money;
 
     if (!config.debug) {
         subscribers.forEach(chatId => {
-            if (playingUsers[0] !== chatId) SendMessage(chatId, `Игра на ${money} гелиончиков скоро начнется, у вас есть 1 минута, чтобы присоединиться!`, gameKeyboard);
+            if (zeroUser !== chatId) SendMessage(chatId, `Игра на ${money} гелиончиков скоро начнется, у вас есть 1 минута, чтобы присоединиться!`, GetKeyboard(chatId));
         });
     }
 
@@ -655,13 +676,14 @@ function StartGame(money) {
             Transfer(config.TransferBotName, namesUsersPlaying[0], money, (err, status) => {
                 if (err) {
                     log.error(`hel ret error: ${err}\nStatus: ${status}\nMoney: ${money}`);
-                    SendMessage(playingUsers[0], 'При возвращение гелиончиков произошла ошибка!!!\nМы обязательно во всём разберёмся и вернём их на родину!', mainMenuKeyboard);
+                    SendMessage(zeroUser, 'При возвращение гелиончиков произошла ошибка!!!\nМы обязательно во всём разберёмся и вернём их на родину!', GetKeyboard(zeroUser));
                 }
             });
 
-            SendMessage(playingUsers[0], 'К сожалению вас никто не поддержал =(', mainMenuKeyboard);
-            SendMessageToAll('Игра так и не началась, поэтому вы больше не смотрите за ней!', playingUsers[0], mainMenuKeyboard);
+
+            SendMessageToAll('Игра так и не началась, поэтому вы больше не смотрите за ней!', zeroUser, GetKeyboard(zeroUser));
             ResetGame();
+            SendMessage(zeroUser, 'К сожалению вас никто не поддержал =(', GetKeyboard(zeroUser));
         }
     }, (!config.debug) ? 60000 : 6000);
 }
@@ -675,7 +697,7 @@ function GiveWeapon() {
     if (currentPlayer >= playingUsers.length) currentPlayer = 0;
 
     let bulEm = '';
-    for (var i = 0; i < 6; i++){
+    for (let i = 0; i < 6; i++){
         bulEm += (i <= currentBullet) ? '\u{26AA}' : '\u{26AB}';
     }
 
@@ -716,6 +738,12 @@ function GiveWeapon() {
  * @param {Number} lType
  */
 function PlayerLosing(lType) {
+    watchingUsers.push(playingUsers[currentPlayer]);
+    ripUsers.push(namesUsersPlaying[currentPlayer]);
+    playingUsers.splice(currentPlayer, 1);
+    namesUsersPlaying.splice(currentPlayer, 1);
+    if (currentPlayer > 0) currentPlayer--;
+
     if (lType === 1) {
         SendMessage(playingUsers[currentPlayer], 'К сожалению вы проиграли!', hideKeyboard);
         SendMessageToAll(`@${namesUsersPlaying[currentPlayer]} зассал и не спустил курок!`, playingUsers[currentPlayer]);
@@ -725,12 +753,6 @@ function PlayerLosing(lType) {
 
         ReloadWeapon();
     }
-
-    watchingUsers.push(playingUsers[currentPlayer]);
-    ripUsers.push(namesUsersPlaying[currentPlayer]);
-    playingUsers.splice(currentPlayer, 1);
-    namesUsersPlaying.splice(currentPlayer, 1);
-    if (currentPlayer > 0) currentPlayer--;
 
     setTimeout(() => {
         if (playingUsers.length > 1) {
@@ -746,20 +768,20 @@ function PlayerLosing(lType) {
  * @method PlayerWin
  */
 function PlayerWin() {
-    var rip = '';
+    let rip = '';
     ripUsers.forEach(ripUser => {
         rip += `@${ripUser}\n`
     });
 
-    SendMessage(playingUsers[currentPlayer], `Поздравляем с выживанием!\nВы выиграли ${bank}* гелиончиков!\nПомним, любим, скорбим:\n${rip}`, mainMenuKeyboard);
-    SendMessageToAll(`@${namesUsersPlaying[currentPlayer]} выжил и выиграл ${bank}* гелиончиков!\nПомним, любим, скорбим:\n${rip}`, playingUsers[currentPlayer], mainMenuKeyboard);
+    SendMessage(playingUsers[currentPlayer], `Поздравляем с выживанием!\nВы выиграли ${bank}* гелиончиков!\nПомним, любим, скорбим:\n${rip}`, GetKeyboard(playingUsers[currentPlayer]));
+    SendMessageToAll(`@${namesUsersPlaying[currentPlayer]} выжил и выиграл ${bank}* гелиончиков!\nПомним, любим, скорбим:\n${rip}`, playingUsers[currentPlayer], GetKeyboard(-1));
 
     bank = Math.floor(bank * 0.98);
 
     Transfer(config.TransferBotName, namesUsersPlaying[currentPlayer], bank, (err, status) => {
         if (err) {
             log.error(`ERROR: PlayerWin ${err}\nStatus: ${status}`);
-            SendMessage(playingUsers[0], 'При зачислении гелиончиков произошла ошибка!!!\nМы обязательно во всём разберёмся и вернём их на родину!', mainMenuKeyboard);
+            SendMessage(playingUsers[0], 'При зачислении гелиончиков произошла ошибка!!!\nМы обязательно во всём разберёмся и вернём их на родину!', GetKeyboard(playingUsers[0]));
         }
     });
 
@@ -804,11 +826,11 @@ function ResetGame() {
  */
 function GetUserInfo(msg) {
     try {
-        var fromId = msg.from.id;
-        var firstName = (msg.from.first_name) ? msg.from.first_name : '';
-        var lastName = (msg.from.last_name) ? msg.from.last_name : '';
-        var username = (msg.from.username) ? msg.from.username : `${firstName} ${lastName}`.trim();
-        var forBUsername = (msg.from.username) ? msg.from.username : ((lastName) ? lastName : firstName);
+        let fromId = msg.from.id;
+        let firstName = (msg.from.first_name) ? msg.from.first_name : '';
+        let lastName = (msg.from.last_name) ? msg.from.last_name : '';
+        let username = (msg.from.username) ? msg.from.username : `${firstName} ${lastName}`.trim();
+        let forBUsername = (msg.from.username) ? msg.from.username : ((lastName) ? lastName : firstName);
 
         return {
             fromId: fromId,
