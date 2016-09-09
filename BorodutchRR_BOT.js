@@ -63,7 +63,7 @@ function GetKeyboard(fromId){
     };
 
 
-    if (isPlaying && watchingUsers.indexOf(fromId) > -1 && playingUsers.indexOf(fromId) === -1 && ripUsers.indexOf(fromId) === -1) {
+    if ((isPrePlaying || isPlaying) && watchingUsers.indexOf(fromId) > -1 && playingUsers.indexOf(fromId) === -1 && ripUsers.indexOf(fromId) === -1) {
         console.log(isPlaying, watchingUsers.indexOf(fromId) > -1, playingUsers.indexOf(fromId) === -1, ripUsers.indexOf(fromId) === -1, isPlaying && watchingUsers.indexOf(fromId) > -1 && playingUsers.indexOf(fromId) === -1 && ripUsers.indexOf(fromId) === -1);
         keyboard = {
             reply_markup: JSON.stringify({
@@ -680,9 +680,9 @@ function StartGame(money) {
                 }
             });
 
+            ResetGame();
 
             SendMessageToAll('Игра так и не началась, поэтому вы больше не смотрите за ней!', zeroUser, GetKeyboard(zeroUser));
-            ResetGame();
             SendMessage(zeroUser, 'К сожалению вас никто не поддержал =(', GetKeyboard(zeroUser));
         }
     }, (!config.debug) ? 60000 : 6000);
@@ -738,6 +738,9 @@ function GiveWeapon() {
  * @param {Number} lType
  */
 function PlayerLosing(lType) {
+    let curPlayer = playingUsers[currentPlayer];
+    let curPlayerName = namesUsersPlaying[currentPlayer];
+
     watchingUsers.push(playingUsers[currentPlayer]);
     ripUsers.push(namesUsersPlaying[currentPlayer]);
     playingUsers.splice(currentPlayer, 1);
@@ -745,11 +748,11 @@ function PlayerLosing(lType) {
     if (currentPlayer > 0) currentPlayer--;
 
     if (lType === 1) {
-        SendMessage(playingUsers[currentPlayer], 'К сожалению вы проиграли!', hideKeyboard);
-        SendMessageToAll(`@${namesUsersPlaying[currentPlayer]} зассал и не спустил курок!`, playingUsers[currentPlayer]);
+        SendMessage(curPlayer, 'К сожалению вы проиграли!', hideKeyboard);
+        SendMessageToAll(`@${curPlayerName} зассал и не спустил курок!`, curPlayer);
     } else  if (lType === 2) {
-        SendMessage(playingUsers[currentPlayer], 'К сожалению теперь вы труп!', hideKeyboard);
-        SendMessageToAll(`@${namesUsersPlaying[currentPlayer]} ныне покоится с миром!`, playingUsers[currentPlayer]);
+        SendMessage(curPlayer, 'К сожалению теперь вы труп!', hideKeyboard);
+        SendMessageToAll(`@${curPlayerName} ныне покоится с миром!`, curPlayer);
 
         ReloadWeapon();
     }
