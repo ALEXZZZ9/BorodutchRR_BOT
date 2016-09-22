@@ -1,6 +1,7 @@
 {
     "debug": false,
     "TELEGRAM_BOT_TOKEN" : "123456789:qqqqqqwwwwwweeeeeerrrrrrttttttyyyyyy",
+    "DEBUG_TELEGRAM_BOT_TOKEN" : "123456789:qqqqqqwwwwwweeeeeerrrrrrttttttyyyyyy",
     "BorodutchAPIURL" : "http://123.herokuapp.com",
     "BorodutchAPIKey" : "123456qwerty",
     "TransferBotName" : "BorodutchRR_BOT",
